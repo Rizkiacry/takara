@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Takaradex - show all cards as a3 (display only)
 // @namespace    local.takaradex.a3display
-// @version      1.4
+// @version      1.5
 // @description  Cosmetically shows every card (collection, market, etc.) with the a3 look in your own browser. Nothing is sent to the server. Alt+Shift+A toggles real/a3 view.
 // @match        https://takara-cards.me/*
 // @match        https://www.takara-cards.me/*
@@ -28,10 +28,19 @@
     return el ? el.textContent.trim().toLowerCase() : "";
   }
 
+  // Cards you don't own (shown greyed out in the Takaradex) keep their normal look:
+  // the site gives them a dark grey frame border and a dimmed rarity seal.
+  function isMissing(inner) {
+    const frame = inner.querySelector(".card-frame");
+    if (frame && frame.classList.contains("border-zinc-800")) return true;
+    return !!inner.querySelector(".rarity-seal.opacity-40");
+  }
+
   function upgrade(inner) {
     const lvl = inner.dataset.eveil;
     if (lvl === undefined || lvl === "3" || inner.dataset.fakeA3) return;
     if (skip.has(cardName(inner))) return;
+    if (isMissing(inner)) return;
 
     const orig = {
       eveil: lvl,
