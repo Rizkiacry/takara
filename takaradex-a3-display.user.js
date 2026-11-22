@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Takaradex - show all cards as a3 (display only)
 // @namespace    local.takaradex.a3display
-// @version      1.3
+// @version      1.4
 // @description  Cosmetically shows every card (collection, market, etc.) with the a3 look in your own browser. Nothing is sent to the server. Alt+Shift+A toggles real/a3 view.
 // @match        https://takara-cards.me/*
 // @match        https://www.takara-cards.me/*
@@ -30,7 +30,7 @@
 
   function upgrade(inner) {
     const lvl = inner.dataset.eveil;
-    if (lvl === undefined || lvl === "3") return;
+    if (lvl === undefined || lvl === "3" || inner.dataset.fakeA3) return;
     if (skip.has(cardName(inner))) return;
 
     const orig = {
@@ -95,8 +95,18 @@
     originals.delete(inner);
   }
 
-  // Card pickers (e.g. "New trade" -> card to give) have no level marker at all,
-  // so they get the a3 overlays added directly onto the button.
+  // Card pickers (e.g. "New trade" -> card to give) have no level marker at all.
+  // Give the button the same attributes a normal card wrapper has (level, rarity,
+  // --rc colour) so the site's own a3 styles apply, then add the a3 overlays.
+  function rarityOf(btn) {
+    const t = (btn.querySelector(".rarity-seal .sr-only") || {}).textContent || "";
+    if (t.includes("Couronne") || /crown/i.test(t)) return 8;
+    const d = (t.match(/◆/g) || []).length;
+    if (d) return d;
+    const k = (t.match(/★/g) || []).length;
+    return k ? 4 + k : 0;
+  }
+
   function upgradePicker(btn) {
     if (btn.dataset.fakeA3) return;
     const scale = btn.querySelector(".card-scale");
@@ -106,9 +116,22 @@
     if (cap && skip.has(cap.textContent.trim().toLowerCase())) return;
 
     const colour = getComputedStyle(frameEl).borderTopColor;
-    const orig = { filter: scale.style.filter, scale, added: [] };
-    scale.style.filter =
-      `drop-shadow(0 0 9px color-mix(in oklab, ${colour} 55%, transparent)) drop-shadow(0 4px 7px rgb(0 0 0 / 0.6))`;
+    const orig = {
+      scale, added: [],
+      boxShadow: scale.style.boxShadow, radius: scale.style.borderRadius,
+      rc: btn.style.getPropertyValue("--rc"),
+    };
+
+    btn.dataset.eveil = "3";
+    const r = rarityOf(btn);
+    if (r) btn.dataset.rarity = String(r);
+    btn.style.setProperty("--rc", colour);
+
+    // same glow as a normal a3 card, kept on the inner element so the
+    // button's own selection ring is untouched
+    scale.style.borderRadius = "0.75rem";
+    scale.style.boxShadow =
+      `0 0 18px color-mix(in oklab, ${colour} 55%, transparent), 0 4px 14px rgb(0 0 0 / 0.6)`;
 
     const frame = document.createElement("span");
     frame.setAttribute("aria-hidden", "true");
@@ -131,8 +154,12 @@
   function revertPicker(btn) {
     const o = originals.get(btn);
     if (!o) return;
-    o.scale.style.filter = o.filter;
+    o.scale.style.boxShadow = o.boxShadow;
+    o.scale.style.borderRadius = o.radius;
     o.added.forEach(el => el.remove());
+    delete btn.dataset.eveil;
+    delete btn.dataset.rarity;
+    if (o.rc) btn.style.setProperty("--rc", o.rc); else btn.style.removeProperty("--rc");
     delete btn.dataset.fakeA3;
     originals.delete(btn);
   }
