@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Takaradex - show all cards as a3 (display only)
 // @namespace    local.takaradex.a3display
-// @version      1.2
+// @version      1.3
 // @description  Cosmetically shows every card (collection, market, etc.) with the a3 look in your own browser. Nothing is sent to the server. Alt+Shift+A toggles real/a3 view.
 // @match        https://takara-cards.me/*
 // @match        https://www.takara-cards.me/*
@@ -86,6 +86,7 @@
   function revert(inner) {
     const o = originals.get(inner);
     if (!o) return;
+    if (o.added) return revertPicker(inner);
     inner.dataset.eveil = o.eveil;
     inner.style.boxShadow = o.boxShadow;
     if (o.frameCreated) o.frame.remove(); else o.frame.className = o.frameClass;
@@ -94,9 +95,52 @@
     originals.delete(inner);
   }
 
+  // Card pickers (e.g. "New trade" -> card to give) have no level marker at all,
+  // so they get the a3 overlays added directly onto the button.
+  function upgradePicker(btn) {
+    if (btn.dataset.fakeA3) return;
+    const scale = btn.querySelector(".card-scale");
+    const frameEl = btn.querySelector(".card-frame");
+    if (!scale || !frameEl || btn.querySelector("[data-eveil]")) return;
+    const cap = btn.querySelector("[data-card-caption] span[title]");
+    if (cap && skip.has(cap.textContent.trim().toLowerCase())) return;
+
+    const colour = getComputedStyle(frameEl).borderTopColor;
+    const orig = { filter: scale.style.filter, scale, added: [] };
+    scale.style.filter =
+      `drop-shadow(0 0 9px color-mix(in oklab, ${colour} 55%, transparent)) drop-shadow(0 4px 7px rgb(0 0 0 / 0.6))`;
+
+    const frame = document.createElement("span");
+    frame.setAttribute("aria-hidden", "true");
+    frame.className = "pointer-events-none absolute inset-0 rounded-xl holo-frame holo-frame-3";
+    const wrap = document.createElement("div");
+    wrap.setAttribute("aria-hidden", "true");
+    wrap.className = "pointer-events-none absolute inset-0 overflow-hidden rounded-xl";
+    const shine = document.createElement("span");
+    shine.className = "absolute inset-0 holo-dawn";
+    wrap.appendChild(shine);
+    btn.appendChild(frame);
+    btn.appendChild(wrap);
+    orig.added.push(frame, wrap);
+
+    btn.dataset.fakeA3 = "1";
+    originals.set(btn, orig);
+    touched.add(btn);
+  }
+
+  function revertPicker(btn) {
+    const o = originals.get(btn);
+    if (!o) return;
+    o.scale.style.filter = o.filter;
+    o.added.forEach(el => el.remove());
+    delete btn.dataset.fakeA3;
+    originals.delete(btn);
+  }
+
   function run() {
     if (!enabled) return;
     document.querySelectorAll("[data-eveil]").forEach(upgrade);
+    document.querySelectorAll('[role="radio"]').forEach(upgradePicker);
   }
 
   function revertAll() {
