@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Takaradex - show all cards as a3 (display only)
 // @namespace    local.takaradex.a3display
-// @version      1.5
+// @version      1.6
 // @description  Cosmetically shows every card (collection, market, etc.) with the a3 look in your own browser. Nothing is sent to the server. Alt+Shift+A toggles real/a3 view.
 // @match        https://takara-cards.me/*
 // @match        https://www.takara-cards.me/*
@@ -95,7 +95,7 @@
   function revert(inner) {
     const o = originals.get(inner);
     if (!o) return;
-    if (o.added) return revertPicker(inner);
+    if (o.added) return revertBare(inner);
     inner.dataset.eveil = o.eveil;
     inner.style.boxShadow = o.boxShadow;
     if (o.frameCreated) o.frame.remove(); else o.frame.className = o.frameClass;
@@ -104,11 +104,12 @@
     originals.delete(inner);
   }
 
-  // Card pickers (e.g. "New trade" -> card to give) have no level marker at all.
-  // Give the button the same attributes a normal card wrapper has (level, rarity,
-  // --rc colour) so the site's own a3 styles apply, then add the a3 overlays.
-  function rarityOf(btn) {
-    const t = (btn.querySelector(".rarity-seal .sr-only") || {}).textContent || "";
+  // Cards with no level marker at all (card pickers, booster reveals...).
+  // The element holding .card-scale gets the same attributes a normal card
+  // wrapper has (level, rarity, --rc colour) so the site's own a3 styles apply,
+  // then the a3 overlays are added inside it.
+  function rarityOf(host) {
+    const t = (host.querySelector(".rarity-seal .sr-only") || {}).textContent || "";
     if (t.includes("Couronne") || /crown/i.test(t)) return 8;
     const d = (t.match(/◆/g) || []).length;
     if (d) return d;
@@ -116,28 +117,35 @@
     return k ? 4 + k : 0;
   }
 
-  function upgradePicker(btn) {
-    if (btn.dataset.fakeA3) return;
-    const scale = btn.querySelector(".card-scale");
-    const frameEl = btn.querySelector(".card-frame");
-    if (!scale || !frameEl || btn.querySelector("[data-eveil]")) return;
-    const cap = btn.querySelector("[data-card-caption] span[title]");
+  function upgradeBare(scale) {
+    if (scale.closest("[data-eveil]")) return;
+    const host = scale.parentElement;
+    if (!host || host.dataset.fakeA3) return;
+    const frameEl = scale.querySelector(".card-frame");
+    if (!frameEl) return;
+    if (frameEl.classList.contains("border-zinc-800")) return; // missing card
+    const cap = host.querySelector("[data-card-caption] span[title]");
     if (cap && skip.has(cap.textContent.trim().toLowerCase())) return;
 
     const colour = getComputedStyle(frameEl).borderTopColor;
     const orig = {
-      scale, added: [],
+      host, scale, added: [],
       boxShadow: scale.style.boxShadow, radius: scale.style.borderRadius,
-      rc: btn.style.getPropertyValue("--rc"),
+      rc: host.style.getPropertyValue("--rc"),
+      position: null,
     };
+    if (getComputedStyle(host).position === "static") {
+      orig.position = host.style.position;
+      host.style.position = "relative";
+    }
 
-    btn.dataset.eveil = "3";
-    const r = rarityOf(btn);
-    if (r) btn.dataset.rarity = String(r);
-    btn.style.setProperty("--rc", colour);
+    host.dataset.eveil = "3";
+    const r = rarityOf(host);
+    if (r) host.dataset.rarity = String(r);
+    host.style.setProperty("--rc", colour);
 
-    // same glow as a normal a3 card, kept on the inner element so the
-    // button's own selection ring is untouched
+    // same glow as a normal a3 card, kept on the inner element so a button's
+    // own selection ring is untouched
     scale.style.borderRadius = "0.75rem";
     scale.style.boxShadow =
       `0 0 18px color-mix(in oklab, ${colour} 55%, transparent), 0 4px 14px rgb(0 0 0 / 0.6)`;
@@ -151,32 +159,33 @@
     const shine = document.createElement("span");
     shine.className = "absolute inset-0 holo-dawn";
     wrap.appendChild(shine);
-    btn.appendChild(frame);
-    btn.appendChild(wrap);
+    host.appendChild(frame);
+    host.appendChild(wrap);
     orig.added.push(frame, wrap);
 
-    btn.dataset.fakeA3 = "1";
-    originals.set(btn, orig);
-    touched.add(btn);
+    host.dataset.fakeA3 = "1";
+    originals.set(host, orig);
+    touched.add(host);
   }
 
-  function revertPicker(btn) {
-    const o = originals.get(btn);
+  function revertBare(host) {
+    const o = originals.get(host);
     if (!o) return;
     o.scale.style.boxShadow = o.boxShadow;
     o.scale.style.borderRadius = o.radius;
     o.added.forEach(el => el.remove());
-    delete btn.dataset.eveil;
-    delete btn.dataset.rarity;
-    if (o.rc) btn.style.setProperty("--rc", o.rc); else btn.style.removeProperty("--rc");
-    delete btn.dataset.fakeA3;
-    originals.delete(btn);
+    if (o.position !== null) host.style.position = o.position;
+    delete host.dataset.eveil;
+    delete host.dataset.rarity;
+    if (o.rc) host.style.setProperty("--rc", o.rc); else host.style.removeProperty("--rc");
+    delete host.dataset.fakeA3;
+    originals.delete(host);
   }
 
   function run() {
     if (!enabled) return;
     document.querySelectorAll("[data-eveil]").forEach(upgrade);
-    document.querySelectorAll('[role="radio"]').forEach(upgradePicker);
+    document.querySelectorAll(".card-scale").forEach(upgradeBare);
   }
 
   function revertAll() {
